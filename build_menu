@@ -1,5 +1,5 @@
 #!/bin/bash
-# Afaneh menu V2.0
+# Afaneh menu V2.0 - 静态版本（LOCALVERSION 和构建时间已固定）
 
 # Variables
 DIR=`readlink -f .`
@@ -19,10 +19,10 @@ export LLVM_IAS=1
 export ARCH=arm64
 export USE_CCACHE=1
 
-# 修改 LOCALVERSION 为你要伪装的原厂版本号
+# ===== 固定 LOCALVERSION（uname -r 的后半段）=====
 KERNEL_MAKE_ENV="LOCALVERSION=-Android12-9-00020-gc9f59ef34367-ab9585114 CONFIG_LTO_CLANG=y CONFIG_LTO_NONE=n CONFIG_LTO_CLANG_THIN=y CONFIG_LTO_CLANG_FULL=n CONFIG_LOCALVERSION_AUTO=n"
 
-# 伪造构建时间 (uname -v)
+# ===== 固定构建时间（uname -v）=====
 export KBUILD_BUILD_TIMESTAMP="2023-02-08 23:50:57 +0000"
 
 # Color
@@ -124,7 +124,8 @@ anykernel3(){
     git reset --hard
     cp $DIR/arch/arm64/boot/Image zImage
     sed -i "s/ExampleKernel by osm0sis/${VARIANT} kernel by afaneh92/g" anykernel.sh
-    zip -r9 $PARENT_DIR/${VARIANT}_kernel_`date '+%Y_%m_%d'`.zip * -x .git README.md *placeholder
+    # ===== 打包文件名不再带日期，固定为 ${VARIANT}_kernel.zip =====
+    zip -r9 $PARENT_DIR/${VARIANT}_kernel.zip * -x .git README.md *placeholder
     cd $DIR
     pause 'continue'
   else
@@ -160,7 +161,7 @@ read_options(){
   esac
 }
 
-# Step # Main logic - infinite loop
+# Main loop
 while true
 do
   show_menus
