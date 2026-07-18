@@ -47,16 +47,19 @@ jobs:
           # 1. 生成基础配置
           make ARCH=arm64 ${{ env.DEVICE_DEFCONFIG }}
 
-          # 2. 直接修改 .config 文件（覆盖空值）
-          sed -i 's/^CONFIG_LITTLE_CPU_MASK=.*/CONFIG_LITTLE_CPU_MASK="0x0F"/' .config
-          sed -i 's/^CONFIG_BIG_CPU_MASK=.*/CONFIG_BIG_CPU_MASK="0x70"/' .config
-          sed -i 's/^CONFIG_PRIME_CPU_MASK=.*/CONFIG_PRIME_CPU_MASK="0x80"/' .config
-          # 如果某一行不存在，则追加（安全兜底）
-          grep -q "^CONFIG_LITTLE_CPU_MASK=" .config || echo 'CONFIG_LITTLE_CPU_MASK="0x0F"' >> .config
-          grep -q "^CONFIG_BIG_CPU_MASK=" .config || echo 'CONFIG_BIG_CPU_MASK="0x70"' >> .config
-          grep -q "^CONFIG_PRIME_CPU_MASK=" .config || echo 'CONFIG_PRIME_CPU_MASK="0x80"' >> .config
+          # 2. 修正 CPU 掩码（不带引号，hex 格式）
+          sed -i 's/^CONFIG_LITTLE_CPU_MASK=.*/CONFIG_LITTLE_CPU_MASK=0x0F/' .config
+          sed -i 's/^CONFIG_BIG_CPU_MASK=.*/CONFIG_BIG_CPU_MASK=0x70/' .config
+          sed -i 's/^CONFIG_PRIME_CPU_MASK=.*/CONFIG_PRIME_CPU_MASK=0x80/' .config
+          # 若不存在则追加（保险）
+          grep -q "^CONFIG_LITTLE_CPU_MASK=" .config || echo 'CONFIG_LITTLE_CPU_MASK=0x0F' >> .config
+          grep -q "^CONFIG_BIG_CPU_MASK=" .config || echo 'CONFIG_BIG_CPU_MASK=0x70' >> .config
+          grep -q "^CONFIG_PRIME_CPU_MASK=" .config || echo 'CONFIG_PRIME_CPU_MASK=0x80' >> .config
 
-          # 3. 自动填充其余选项（不交互）
+          # （可选）打印确认
+          grep "CPU_MASK" .config || true
+
+          # 3. 自动填充其余选项（不会弹出交互菜单）
           make ARCH=arm64 olddefconfig
 
           # 4. 开始编译
