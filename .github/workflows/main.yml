@@ -1,0 +1,87 @@
+name: Build Kernel with AnyKernel3
+
+on:
+  workflow_dispatch:
+
+env:
+  # 请修改为你的内核仓库地址和分支
+  KERNEL_REPO: 'https://github.com/fenghuang11451/xiaomi_xaga_kernel'
+  KERNEL_BRANCH: 'main'          # 或 master
+  DEVICE_DEFCONFIG: 'xaga_defconfig'  # 修改为你的 defconfig 文件名
+  # 固定 LOCALVERSION（不再动态生成）
+  LOCALVERSION: '-Android12-9-00020-gc9f59ef34367-ab9585114'
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: 安装编译依赖
+        run: |
+          sudo apt update
+          sudo apt install -y git zip make gcc-aarch64-linux-gnu lz4 \
+            flex bison libssl-dev ccache
+
+      - name: 下载 Clang 工具链
+        run: |
+          git clone --depth=1 \
+            https://github.com/crdroidandroid/android_prebuilts_clang_host_linux-x86_clang-r416183b \
+            clang
+          echo "$PWD/clang/bin" >> $GITHUB_PATH
+
+      - name: 检出内核源码
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.KERNEL_REPO }}
+          ref: ${{ env.KERNEL_BRANCH }}
+          path: kernel
+
+      - name: 检出 AnyKernel3
+        uses: actions/checkout@v4
+        with:
+          repository: osm0sis/AnyKernel3
+          path: anykernel3
+
+      - name: 编译内核
+        working-directory: kernel
+        run: |
+          # 固定构建时间（uname -v）
+          export KBUILD_BUILD_TIMESTAMP="2023-02-08 23:50:57 +0000"
+          
+          # 生成配置
+          make ARCH=arm64 ${{ env.DEVICE_DEFCONFIG }}
+          
+          # 编译（LOCALVERSION 已固定）
+          make -j$(nproc) \
+            ARCH=arm64 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CC=clang \
+            LOCALVERSION="${{ env.LOCALVERSION }}" \
+            CONFIG_LTO_CLANG=y \
+            CONFIG_LTO_NONE=n \
+            CONFIG_LTO_CLANG_THIN=y \
+            CONFIG_LTO_CLANG_FULL=n \
+            CONFIG_LOCALVERSION_AUTO=n
+
+      - name: 打包进 AnyKernel3
+        run: |
+          # 复制内核镜像（优先 Image）
+          if [ -f kernel/arch/arm64/boot/Image ]; then
+            cp kernel/arch/arm64/boot/Image anykernel3/zImage
+          elif [ -f kernel/arch/arm64/boot/Image.gz ]; then
+            cp kernel/arch/arm64/boot/Image.gz anykernel3/zImage
+          else
+            echo "❌ 内核镜像未找到！编译可能失败。"
+            exit 1
+          fi
+          
+          cd anykernel3
+          rm -rf .git README.md *placeholder
+          # ===== 固定打包文件名，不带日期 =====
+          zip -r9 ../Kernel.zip * -x .git README.md *placeholder
+          cd ..
+
+      - name: 上传编译结果
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kernel-Package
+          path: Kernel.zip
