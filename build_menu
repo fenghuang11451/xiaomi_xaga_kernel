@@ -18,7 +18,12 @@ export LLVM=1
 export LLVM_IAS=1
 export ARCH=arm64
 export USE_CCACHE=1
+
+# 修改 LOCALVERSION 为你要伪装的原厂版本号
 KERNEL_MAKE_ENV="LOCALVERSION=-Android12-9-00020-gc9f59ef34367-ab9585114 CONFIG_LTO_CLANG=y CONFIG_LTO_NONE=n CONFIG_LTO_CLANG_THIN=y CONFIG_LTO_CLANG_FULL=n CONFIG_LOCALVERSION_AUTO=n"
+
+# 伪造构建时间 (uname -v)
+export KBUILD_BUILD_TIMESTAMP="2023-02-08 23:50:57 +0000"
 
 # Color
 ON_BLUE=`echo -e "\033[44m"`	# On Blue
@@ -90,7 +95,6 @@ clean(){
 }
 
 build_kernel(){
-  # variant
   echo "${GREEN}***** Compiling kernel *****${STD}"
   [ ! -d "out" ] && mkdir out
   make CC="ccache clang" CXX="ccache clang++" -j$(nproc) -C $(pwd) $KERNEL_MAKE_ENV gki_defconfig
@@ -156,8 +160,6 @@ read_options(){
   esac
 }
 
-# Trap CTRL+C, CTRL+Z and quit singles
- 
 # Step # Main logic - infinite loop
 while true
 do
