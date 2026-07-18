@@ -29,7 +29,6 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: ${{ env.KERNEL_REPO }}
-          # 不再指定 ref，自动使用该仓库的默认分支
           path: kernel
 
       - name: 检出 AnyKernel3
@@ -43,6 +42,7 @@ jobs:
         run: |
           export KBUILD_BUILD_TIMESTAMP="2023-02-08 23:50:57 +0000"
           make ARCH=arm64 ${{ env.DEVICE_DEFCONFIG }}
+          make ARCH=arm64 olddefconfig   # ← 关键修复
           make -j$(nproc) \
             ARCH=arm64 \
             CROSS_COMPILE=aarch64-linux-gnu- \
