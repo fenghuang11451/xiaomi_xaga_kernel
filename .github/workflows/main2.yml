@@ -1,0 +1,22 @@
+- name: 列出所有交互式选项（用于审查）
+  working-directory: kernel
+  run: |
+    # 生成基础配置
+    make ARCH=arm64 ${{ env.DEVICE_DEFCONFIG }}
+    
+    # 【关键命令】列出所有缺失的新选项
+    make ARCH=arm64 listnewconfig > new_options.txt || true
+    
+    echo "========================================="
+    echo "📋 以下是需要交互的选项列表（如果为空则安全）："
+    cat new_options.txt
+    echo "========================================="
+    
+    # 把这份列表也保存到工作区，上传给你下载
+    cp new_options.txt $GITHUB_WORKSPACE/new_options.txt
+
+- name: 上传交互选项列表供你查阅
+  uses: actions/upload-artifact@v4
+  with:
+    name: Interactive-Options-List
+    path: new_options.txt
