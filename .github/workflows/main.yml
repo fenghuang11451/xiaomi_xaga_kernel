@@ -5,7 +5,7 @@ on:
 
 env:
   # 请修改为你的内核仓库地址和分支
-  KERNEL_REPO: 'https://github.com/fenghuang11451/xiaomi_xaga_kernel'
+  KERNEL_REPO: 'fenghuang11451/xiaomi_xaga_kernel'
   KERNEL_BRANCH: 'main'          # 或 master
   DEVICE_DEFCONFIG: 'xaga_defconfig'  # 修改为你的 defconfig 文件名
   # 固定 LOCALVERSION（不再动态生成）
