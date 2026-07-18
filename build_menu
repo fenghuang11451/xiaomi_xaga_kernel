@@ -1,169 +1,98 @@
-#!/bin/bash
-# Afaneh menu V2.0 - 静态版本（LOCALVERSION 和构建时间已固定）
+name: Build Kernel with AnyKernel3
 
-# Variables
-DIR=`readlink -f .`
-PARENT_DIR=`readlink -f ${DIR}/..`
+on:
+  workflow_dispatch:
 
-export CROSS_COMPILE=$PARENT_DIR/clang-r416183b/bin/aarch64-linux-gnu-
-export CC=$PARENT_DIR/clang-r416183b/bin/clang
+env:
+  # 你的内核仓库（注意是 owner/repo 格式）
+  KERNEL_REPO: 'fenghuang11451/xiaomi_xaga_kernel'
+  # 分支名（默认是 mglru，根据你的实际情况）
+  KERNEL_BRANCH: 'mglru'
+  # 使用 xaga_defconfig（之前确认过的）
+  DEVICE_DEFCONFIG: 'xaga_defconfig'
+  # 伪装的内核版本号（uname -r 的后半段）
+  LOCALVERSION: '-Android12-9-00020-gc9f59ef34367-ab9585114'
 
-export PLATFORM_VERSION=12
-export ANDROID_MAJOR_VERSION=s
-export PATH=$PARENT_DIR/clang-r416183b/bin:$PATH
-export PATH=$PARENT_DIR/build-tools/path/linux-x86:$PATH
-export PATH=$PARENT_DIR/gas/linux-x86:$PATH
-export TARGET_SOC=s5e9925
-export LLVM=1
-export LLVM_IAS=1
-export ARCH=arm64
-export USE_CCACHE=1
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    steps:
+      - name: 安装编译依赖
+        run: |
+          sudo apt update
+          sudo apt install -y git zip make gcc-aarch64-linux-gnu lz4 \
+            flex bison libssl-dev ccache bc
 
-# ===== 固定 LOCALVERSION（uname -r 的后半段）=====
-KERNEL_MAKE_ENV="LOCALVERSION=-Android12-9-00020-gc9f59ef34367-ab9585114 CONFIG_LTO_CLANG=y CONFIG_LTO_NONE=n CONFIG_LTO_CLANG_THIN=y CONFIG_LTO_CLANG_FULL=n CONFIG_LOCALVERSION_AUTO=n"
+      - name: 下载 Clang 工具链
+        run: |
+          git clone --depth=1 \
+            https://github.com/crdroidandroid/android_prebuilts_clang_host_linux-x86_clang-r416183b \
+            clang
+          echo "$PWD/clang/bin" >> $GITHUB_PATH
 
-# ===== 固定构建时间（uname -v）=====
-export KBUILD_BUILD_TIMESTAMP="2023-02-08 23:50:57 +0000"
+      - name: 检出内核源码
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ env.KERNEL_REPO }}
+          ref: ${{ env.KERNEL_BRANCH }}
+          path: kernel
 
-# Color
-ON_BLUE=`echo -e "\033[44m"`	# On Blue
-RED=`echo -e "\033[1;31m"`	# Red
-BLUE=`echo -e "\033[1;34m"`	# Blue
-GREEN=`echo -e "\033[1;32m"`	# Green
-Under_Line=`echo -e "\e[4m"`	# Text Under Line
-STD=`echo -e "\033[0m"`		# Text Clear
- 
-# Functions
-pause(){
-  read -p "${RED}$2${STD}Press ${BLUE}[Enter]${STD} key to $1..."
-}
+      - name: 检出 AnyKernel3
+        uses: actions/checkout@v4
+        with:
+          repository: osm0sis/AnyKernel3
+          path: anykernel3
 
-clang(){
-  if [ ! -d $PARENT_DIR/clang-r416183b ]; then
-    pause 'clone Android Clang/LLVM Prebuilts'
-    git clone https://github.com/crdroidandroid/android_prebuilts_clang_host_linux-x86_clang-r416183b $PARENT_DIR/clang-r416183b --depth=1
-    . $DIR/build_menu
-  fi
-}
+      - name: 编译内核
+        working-directory: kernel
+        run: |
+          # 伪造构建时间（uname -v）
+          export KBUILD_BUILD_TIMESTAMP="2023-02-08 23:50:57 +0000"
 
-gas(){
-  if [ ! -d $PARENT_DIR/gas/linux-x86 ]; then
-    pause 'clone prebuilt binaries of GNU `as` (the assembler)'
-    git clone https://android.googlesource.com/platform/prebuilts/gas/linux-x86 $PARENT_DIR/gas/linux-x86 --depth=1
-    . $DIR/build_menu
-  fi
-}
+          # 1. 生成基础配置
+          make ARCH=arm64 ${{ env.DEVICE_DEFCONFIG }}
 
-build_tools(){
-  if [ ! -d $PARENT_DIR/build-tools ]; then
-    pause 'clone prebuilt binaries of build tools'
-    git clone https://android.googlesource.com/platform/prebuilts/build-tools $PARENT_DIR/build-tools --depth=1
-    . $DIR/build_menu
-  fi
-}
+          # 2. 修复 CPU 掩码（根据 mt6895.dtsi 确认的 1+3+4 架构）
+          scripts/config --file .config --set-str LITTLE_CPU_MASK "0x0F"
+          scripts/config --file .config --set-str BIG_CPU_MASK "0x70"
+          scripts/config --file .config --set-str PRIME_CPU_MASK "0x80"
 
-variant(){
-  findconfig=""
-  findconfig=($(ls arch/arm64/configs/release_* 2>/dev/null))
-  declare -i i=1
-  shift 2
-  for e in "${findconfig[@]}"; do
-    echo "$i) $(basename $e | cut -d'_' -f2)"
-    i=i+1
-  done
-  echo ""
-  read -p "Select variant: " REPLY
-  i="$REPLY"
-  if [[ $i -gt 0 && $i -le ${#findconfig[@]} ]]; then
-    export v="${findconfig[$i-1]}"
-    export VARIANT=$(basename $v | cut -d'_' -f2)
-    echo ${VARIANT} selected
-    pause 'continue'
-  else
-    pause 'return to Main menu' 'Invalid option, '
-    . $DIR/build_menu
-  fi
-}
+          # 3. 自动填充其他所有选项（避免交互菜单）
+          yes "" | make ARCH=arm64 oldconfig
 
-clean(){
-  echo "${GREEN}***** Cleaning in Progress *****${STD}"
-  make clean
-  make mrproper
-  [ -d "out" ] && rm -rf out
-  echo "${GREEN}***** Cleaning Done *****${STD}"
-  pause 'continue'
-}
+          # 4. 正式编译
+          make -j$(nproc) \
+            ARCH=arm64 \
+            CROSS_COMPILE=aarch64-linux-gnu- \
+            CC=clang \
+            LOCALVERSION="${{ env.LOCALVERSION }}" \
+            CONFIG_LTO_CLANG=y \
+            CONFIG_LTO_NONE=n \
+            CONFIG_LTO_CLANG_THIN=y \
+            CONFIG_LTO_CLANG_FULL=n \
+            CONFIG_LOCALVERSION_AUTO=n
 
-build_kernel(){
-  echo "${GREEN}***** Compiling kernel *****${STD}"
-  [ ! -d "out" ] && mkdir out
-  make CC="ccache clang" CXX="ccache clang++" -j$(nproc) -C $(pwd) $KERNEL_MAKE_ENV gki_defconfig
-  make -j$(nproc) -C $(pwd) $KERNEL_MAKE_ENV menuconfig
-#  make -j$(nproc) -C $(pwd) $KERNEL_MAKE_ENV savedefconfig
-  make CC="ccache clang" CXX="ccache clang++" -j$(nproc) -C $(pwd) $KERNEL_MAKE_ENV
+      - name: 打包 AnyKernel3
+        run: |
+          # 复制内核镜像（优先 Image）
+          if [ -f kernel/arch/arm64/boot/Image ]; then
+            cp kernel/arch/arm64/boot/Image anykernel3/zImage
+          elif [ -f kernel/arch/arm64/boot/Image.gz ]; then
+            cp kernel/arch/arm64/boot/Image.gz anykernel3/zImage
+          else
+            echo "❌ 内核镜像未找到！"
+            exit 1
+          fi
 
-  [ -e arch/arm64/boot/Image.gz ] && cp arch/arm64/boot/Image.gz $(pwd)/out/Image.gz
-  if [ -e arch/arm64/boot/Image ]; then
-    cp arch/arm64/boot/Image $(pwd)/out/Image
+          cd anykernel3
+          # 清理多余文件
+          rm -rf .git README.md *placeholder
+          # 打包（文件名不包含动态日期，避免检测）
+          zip -r9 ../Kernel.zip * -x .git README.md *placeholder
+          cd ..
 
-    echo "${GREEN}***** Ready to Roar *****${STD}"
-    pause 'continue'
-  else
-    pause 'return to Main menu' 'Kernel STUCK in BUILD!, '
-  fi
-}
-
-anykernel3(){
-  if [ ! -d $PARENT_DIR/AnyKernel3 ]; then
-    pause 'clone AnyKernel3 - Flashable Zip Template'
-    git clone https://github.com/osm0sis/AnyKernel3 $PARENT_DIR/AnyKernel3 --depth=1
-  fi
-  variant
-  if [ -e $DIR/arch/arm64/boot/Image ]; then
-    cd $PARENT_DIR/AnyKernel3
-    git reset --hard
-    cp $DIR/arch/arm64/boot/Image zImage
-    sed -i "s/ExampleKernel by osm0sis/${VARIANT} kernel by afaneh92/g" anykernel.sh
-    # ===== 打包文件名不再带日期，固定为 ${VARIANT}_kernel.zip =====
-    zip -r9 $PARENT_DIR/${VARIANT}_kernel.zip * -x .git README.md *placeholder
-    cd $DIR
-    pause 'continue'
-  else
-    pause 'return to Main menu' 'Build kernel first, '
-  fi
-}
-
-# Run once
-clang
-gas
-build_tools
-
-# Show menu
-show_menus(){
-  clear
-  echo "${ON_BLUE} B U I L D - M E N U ${STD}"
-  echo "1. ${Under_Line}B${STD}uild kernel"
-  echo "2. ${Under_Line}C${STD}lean"
-  echo "3. Make ${Under_Line}f${STD}lashable zip"
-  echo "4. E${Under_Line}x${STD}it"
-}
-
-# Read input
-read_options(){
-  local choice
-  read -p "Enter choice [ 1 - 4] " choice
-  case $choice in
-    1|b|B) build_kernel ;;
-    2|c|C) clean ;;
-    3|f|F) anykernel3;;
-    4|x|X) exit 0;;
-    *) pause 'return to Main menu' 'Invalid option, '
-  esac
-}
-
-# Main loop
-while true
-do
-  show_menus
-  read_options
-done
+      - name: 上传编译结果
+        uses: actions/upload-artifact@v4
+        with:
+          name: Kernel-Package
+          path: Kernel.zip
