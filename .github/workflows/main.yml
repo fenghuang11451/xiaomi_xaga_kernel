@@ -5,6 +5,7 @@ on:
 
 env:
   KERNEL_REPO: 'fenghuang11451/xiaomi_xaga_kernel'
+  KERNEL_BRANCH: 'mglru'
   DEVICE_DEFCONFIG: 'xaga_defconfig'
   LOCALVERSION: '-Android12-9-00020-gc9f59ef34367-ab9585114'
 
@@ -16,7 +17,7 @@ jobs:
         run: |
           sudo apt update
           sudo apt install -y git zip make gcc-aarch64-linux-gnu lz4 \
-            flex bison libssl-dev ccache
+            flex bison libssl-dev ccache bc
 
       - name: 下载 Clang 工具链
         run: |
@@ -29,6 +30,7 @@ jobs:
         uses: actions/checkout@v4
         with:
           repository: ${{ env.KERNEL_REPO }}
+          ref: ${{ env.KERNEL_BRANCH }}
           path: kernel
 
       - name: 检出 AnyKernel3
@@ -41,11 +43,23 @@ jobs:
         working-directory: kernel
         run: |
           export KBUILD_BUILD_TIMESTAMP="2023-02-08 23:50:57 +0000"
-          # 生成基础配置
+
+          # 1. 生成基础配置
           make ARCH=arm64 ${{ env.DEVICE_DEFCONFIG }}
-          # ⭐ 强制接受所有默认选项（跳过任何交互式菜单）
-          yes "" | make ARCH=arm64 oldconfig
-          # 正式开始编译
+
+          # 2. 直接修改 .config 文件（覆盖空值）
+          sed -i 's/^CONFIG_LITTLE_CPU_MASK=.*/CONFIG_LITTLE_CPU_MASK="0x0F"/' .config
+          sed -i 's/^CONFIG_BIG_CPU_MASK=.*/CONFIG_BIG_CPU_MASK="0x70"/' .config
+          sed -i 's/^CONFIG_PRIME_CPU_MASK=.*/CONFIG_PRIME_CPU_MASK="0x80"/' .config
+          # 如果某一行不存在，则追加（安全兜底）
+          grep -q "^CONFIG_LITTLE_CPU_MASK=" .config || echo 'CONFIG_LITTLE_CPU_MASK="0x0F"' >> .config
+          grep -q "^CONFIG_BIG_CPU_MASK=" .config || echo 'CONFIG_BIG_CPU_MASK="0x70"' >> .config
+          grep -q "^CONFIG_PRIME_CPU_MASK=" .config || echo 'CONFIG_PRIME_CPU_MASK="0x80"' >> .config
+
+          # 3. 自动填充其余选项（不交互）
+          make ARCH=arm64 olddefconfig
+
+          # 4. 开始编译
           make -j$(nproc) \
             ARCH=arm64 \
             CROSS_COMPILE=aarch64-linux-gnu- \
@@ -57,14 +71,14 @@ jobs:
             CONFIG_LTO_CLANG_FULL=n \
             CONFIG_LOCALVERSION_AUTO=n
 
-      - name: 打包进 AnyKernel3
+      - name: 打包 AnyKernel3
         run: |
           if [ -f kernel/arch/arm64/boot/Image ]; then
             cp kernel/arch/arm64/boot/Image anykernel3/zImage
           elif [ -f kernel/arch/arm64/boot/Image.gz ]; then
             cp kernel/arch/arm64/boot/Image.gz anykernel3/zImage
           else
-            echo "❌ 内核镜像未找到！编译可能失败。"
+            echo "❌ 内核镜像未找到！"
             exit 1
           fi
           cd anykernel3
